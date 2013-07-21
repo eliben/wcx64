@@ -1,3 +1,4 @@
-* Read all files listed on argv, or from stdin
+* Read all files listed on argv, or from stdin.
+  When reading from multiple files, a total is needed.
 * All 3 counters
 
