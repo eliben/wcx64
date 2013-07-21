@@ -42,7 +42,9 @@ count_in_file:
     # r11: line counter
     # r13: address of the read buffer
     # rcx: loop index for going over a read buffer
-    # r12: state indicator, with the states defined below
+    # r12: state indicator, with the states defined below.
+    #      the word counter is incremented when we switch from IN_WHITESPACE
+    #      to IN_WORD.
     .set IN_WORD, 1
     .set IN_WHITESPACE, 2
     # In addition, rsi, rdx, rax are used in the call to read().
@@ -50,7 +52,7 @@ count_in_file:
 
     xor %r9, %r9
     xor %r10, %r10
-    xor %r11, %r11
+    mov $1, %r11
     lea buf_for_read, %r13
     mov $IN_WHITESPACE, %r12
 
@@ -67,12 +69,47 @@ count_in_file:
     xor %rcx, %rcx
 
 .L_next_byte_in_buf:
-    movb (%r13, %rax, 1), %r8
-    # ZZZ: here
+    movb (%r13, %rax, 1), %r8           # Read the byte
+
+    # See what we've got and jump to appropriate label.
+    cmpb %r8, $NEWLINE
+    je .L_seen_newline
+    cmpb %r8, $CR
+    je .L_seen_whitespace_not_newline
+    cmpb %r8, $SPACE
+    je .L_seen_whitespace_not_newline
+    cmpb %r8, $TAB
+    je .L_seen_whitespace_not_newline
+    # else, it's not whitespace but a part of a word
+    cmp %r12, $IN_WORD
+    je .L_done_with_this_byte
+    inc %r10
+    mov $IN_WORD, %r12
+    jmp .L_done_with_this_byte
+.L_seen_newline:
+    inc %r11
+.L_seen_whitespace_not_newline:
+    cmp %r12, $IN_WORD
+    jeq .L_end_current_word
+    # Otherwise, still in newline
+    jmp .L_done_with_this_byte
+.L_end_current_word:
+    inc %r10
+    mov $IN_WHITESPACE, %r12
+.L_done_with_this_byte:
     inc %rcx
     cmp %rcx, %rax
     jne .L_next_byte_in_buf
 
+    # Done going over this buffer. We need to read another buffer
+    # if rax != READBUFLEN.
+    cmp $READBUFLEN, %rax
+    jne .L_read_buf
+
+    # Done with this file. The char count is already in r9.
+    # Put the word and line counts in their return locations.
+    mov %r10, %rdx
+    mov %r11, %rax
     ret
 
 # Function print_cstring
