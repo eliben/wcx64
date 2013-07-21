@@ -12,6 +12,7 @@
 *.dylib
 
 # Executables
+wcx64
 *.exe
 *.out
 *.app
