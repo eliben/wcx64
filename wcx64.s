@@ -70,6 +70,7 @@ _start:
     jmp .L_wcx64_exit
 
 .L_no_argv:
+    # Read from stdin
     mov $0, %rdi
     call count_in_file
 

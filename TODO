@@ -1,4 +1,6 @@
 * Read all files listed on argv, or from stdin.
   When reading from multiple files, a total is needed.
 * All 3 counters
+* To print out the numbers: some formatted output is needed;
+  left-padding with spaces
 
