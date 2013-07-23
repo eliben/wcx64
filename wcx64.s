@@ -36,7 +36,7 @@ count_in_file:
     # Register usage within the function:
     #
     # rdi: holds the fd
-    # r8: next byte read from the buffer
+    # dl: next byte read from the buffer
     # r9: char counter
     # r10: word counter
     # r11: line counter
@@ -58,7 +58,7 @@ count_in_file:
 
 .L_read_buf:
     # Call read(fd, buf_for_read, READBUFLEN). rdi already contains fd
-    mov %buf_for_read, %rsi
+    mov %r13, %rsi
     mov $READBUFLEN, %rdx
     mov $0, %rax
     syscall
@@ -69,19 +69,19 @@ count_in_file:
     xor %rcx, %rcx
 
 .L_next_byte_in_buf:
-    movb (%r13, %rax, 1), %r8           # Read the byte
+    movb (%r13, %rcx, 1), %dl           # Read the byte
 
-    # See what we've got and jump to appropriate label.
-    cmpb %r8, $NEWLINE
+    # See what we've got and jump to the appropriate label.
+    cmp $NEWLINE, %dl
     je .L_seen_newline
-    cmpb %r8, $CR
+    cmp $CR, %dl
     je .L_seen_whitespace_not_newline
-    cmpb %r8, $SPACE
+    cmp $SPACE, %dl
     je .L_seen_whitespace_not_newline
-    cmpb %r8, $TAB
+    cmp $TAB, %dl
     je .L_seen_whitespace_not_newline
     # else, it's not whitespace but a part of a word
-    cmp %r12, $IN_WORD
+    cmp $IN_WORD, %r12
     je .L_done_with_this_byte
     inc %r10
     mov $IN_WORD, %r12
@@ -89,12 +89,11 @@ count_in_file:
 .L_seen_newline:
     inc %r11
 .L_seen_whitespace_not_newline:
-    cmp %r12, $IN_WORD
-    jeq .L_end_current_word
+    cmp $IN_WORD, %r12
+    je .L_end_current_word
     # Otherwise, still in newline
     jmp .L_done_with_this_byte
 .L_end_current_word:
-    inc %r10
     mov $IN_WHITESPACE, %r12
 .L_done_with_this_byte:
     inc %rcx
@@ -102,9 +101,9 @@ count_in_file:
     jne .L_next_byte_in_buf
 
     # Done going over this buffer. We need to read another buffer
-    # if rax != READBUFLEN.
+    # if rax == READBUFLEN.
     cmp $READBUFLEN, %rax
-    jne .L_read_buf
+    je .L_read_buf
 
     # Done with this file. The char count is already in r9.
     # Put the word and line counts in their return locations.
