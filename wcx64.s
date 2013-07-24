@@ -230,11 +230,20 @@ print_counters:
     push %rsi
     push %rdi
 
+    # r15 is the counter pointer, running over 0, 1, 2
+    # counter N is at (rsp + 8 * r15)
+    xor %r15, %r15
+
     # Fill the itoa buffer with spaces.
     lea buf_for_itoa, %rdi
     mov $SPACE, %rsi
     mov $ITOABUFLEN, %rdx
     call memset
+
+    mov (%rsp, %r15, 8), %rdi
+    lea endbuf_for_itoa, %rsi
+    call itoa
+
     ret
 
 # Function memset
