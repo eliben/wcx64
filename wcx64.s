@@ -13,13 +13,14 @@ newline_str:
 buf_for_read:
     # leave space for terminating 0
     .space READBUFLEN + 1, 0x0
-    # We need buf_for_itoa to be large enough to contain a 64-bit integer.
-    # endbuf_for_itoa will point to the end of buf_for_itoa and is useful
-    # for passing to itoa.
-    .set BUFLEN, 32
+    # The itoa buffer here is large enough to hold just 11 digits (plus one
+    # byte for the terminating null). For the wc counters this is enough
+    # because it lets us represent 10-digit numbers (up to 10 GB)
+    # with spaces in between.
+    .set ITOABUFLEN, 11
 buf_for_itoa:
-    .space BUFLEN, 0x0
-    .set endbuf_for_itoa, buf_for_itoa + BUFLEN - 1
+    .space ITOABUFLEN + 11, 0x0
+    .set endbuf_for_itoa, buf_for_itoa + ITOABUFLEN - 1
 
 #---------------- CODE ----------------#
     .globl _start
@@ -216,6 +217,40 @@ print_cstring:
     mov $1, %rdi
     mov %r10, %rdx
     syscall
+    ret
+
+# Function print_counters
+#   Print three counters with an optional name to stdout.
+# Arguments:
+#  rdi, rsi, rdx:   the counters
+#  rcx:             address of the name C-string. If 0, no name is printed.
+# Returns: void
+print_counters:
+    push %rdx
+    push %rsi
+    push %rdi
+
+    # Fill the itoa buffer with spaces.
+    lea buf_for_itoa, %rdi
+    mov $SPACE, %rsi
+    mov $ITOABUFLEN, %rdx
+    call memset
+    ret
+
+# Function memset
+#   Fill memory with some byte
+# Arguments:
+#   rdi:    pointer to memory
+#   rsi:    fill byte (in the low 8 bits)
+#   rdx:    how many bytes to fill
+# Returns: void
+memset:
+    xor %r10, %r10
+.L_next_byte:
+    movb %sil, (%rdi, %r10, 1)          # sil is rsi's low 8 bits
+    inc %r10
+    cmp %rdx, %r10
+    jl .L_next_byte
     ret
 
 # Function itoa
