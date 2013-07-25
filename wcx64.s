@@ -10,6 +10,8 @@
     .data
 newline_str:
     .asciz "\n"
+fourspace_str:
+    .asciz "    "
 buf_for_read:
     # leave space for terminating 0
     .space READBUFLEN + 1, 0x0
@@ -17,9 +19,9 @@ buf_for_read:
     # byte for the terminating null). For the wc counters this is enough
     # because it lets us represent 10-digit numbers (up to 10 GB)
     # with spaces in between.
-    .set ITOABUFLEN, 11
+    .set ITOABUFLEN, 12
 buf_for_itoa:
-    .space ITOABUFLEN + 11, 0x0
+    .space ITOABUFLEN, 0x0
     .set endbuf_for_itoa, buf_for_itoa + ITOABUFLEN - 1
 
 #---------------- CODE ----------------#
@@ -30,6 +32,7 @@ _start:
     cmp $1, %r12
     jle .L_no_argv
 
+    mov 16(%rsp), %r14
     # Call open(argv[1], O_RDONLY).
     mov 16(%rsp), %rdi
     mov $O_RDONLY, %rsi
@@ -39,34 +42,12 @@ _start:
 
     mov %rax, %rdi
     call count_in_file
-
-    mov %rax, %r13
-    mov %rdx, %r14
-    mov %r9, %r15
-
-    mov %r13, %rdi
-    lea endbuf_for_itoa, %rsi
-    call itoa
+    
     mov %rax, %rdi
-    call print_cstring
-    lea newline_str, %rdi
-    call print_cstring
-
-    mov %r14, %rdi
-    lea endbuf_for_itoa, %rsi
-    call itoa
-    mov %rax, %rdi
-    call print_cstring
-    lea newline_str, %rdi
-    call print_cstring
-
-    mov %r15, %rdi
-    lea endbuf_for_itoa, %rsi
-    call itoa
-    mov %rax, %rdi
-    call print_cstring
-    lea newline_str, %rdi
-    call print_cstring
+    mov %rdx, %rsi
+    mov %r9, %rdx
+    mov %r14, %rcx
+    call print_counters
 
     jmp .L_wcx64_exit
 
@@ -226,24 +207,53 @@ print_cstring:
 #  rcx:             address of the name C-string. If 0, no name is printed.
 # Returns: void
 print_counters:
+    push %r14
+    push %r15
     push %rdx
     push %rsi
     push %rdi
+    mov %rcx, %r14
 
     # r15 is the counter pointer, running over 0, 1, 2
     # counter N is at (rsp + 8 * r15)
     xor %r15, %r15
 
+.L_print_next_counter:
     # Fill the itoa buffer with spaces.
     lea buf_for_itoa, %rdi
     mov $SPACE, %rsi
     mov $ITOABUFLEN, %rdx
     call memset
 
+    # Convert the next counter and then call print_cstring with the
+    # beginning of the itoa buffer - because we want space-prefixed
+    # output.
     mov (%rsp, %r15, 8), %rdi
     lea endbuf_for_itoa, %rsi
     call itoa
+    lea buf_for_itoa, %rdi
+    call print_cstring
+    
+    inc %r15
+    cmp $3, %r15
+    jl .L_print_next_counter
 
+    # If rcx not 0, print out the given null-terminated string as well.
+    cmp $0, %r14
+    je .L_print_counters_done
+    lea fourspace_str, %rdi
+    call print_cstring
+    mov %r14, %rdi
+    call print_cstring
+
+.L_print_counters_done:
+    lea newline_str, %rdi
+    call print_cstring
+    pop %rdi
+    pop %rsi
+    pop %rdx
+    pop %r15
+    pop %r14
     ret
 
 # Function memset
@@ -275,7 +285,6 @@ memset:
 #           contains valid information.
 itoa:
     movb $0, (%rsi)        # Write the terminating null and advance.
-    dec %rsi
 
     # If the input number is negative, we mark it by placing 1 into r9
     # and negate it. In the end we check if r9 is 1 and add a '-' in front.
