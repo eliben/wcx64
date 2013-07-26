@@ -56,17 +56,12 @@ _start:
     mov $0, %rdi
     call count_in_file
 
-    mov %rax, %r13
-    mov %rdx, %r14
-    mov %r9, %r15
-
-    mov %r13, %rdi
-    lea endbuf_for_itoa, %rsi
-    call itoa
+    # Print the counters without a name string
     mov %rax, %rdi
-    call print_cstring
-    lea newline_str, %rdi
-    call print_cstring
+    mov %rdx, %rsi
+    mov %r9, %rdx
+    mov $0, %rcx
+    call print_counters
 
 .L_wcx64_exit:
     # exit(0)
