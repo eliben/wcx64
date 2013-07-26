@@ -12,6 +12,8 @@ newline_str:
     .asciz "\n"
 fourspace_str:
     .asciz "    "
+total_str:
+    .asciz "total"
 buf_for_read:
     # leave space for terminating 0
     .space READBUFLEN + 1, 0x0
@@ -28,13 +30,27 @@ buf_for_itoa:
     .globl _start
     .text
 _start:
-    mov (%rsp), %r12                # argc
-    cmp $1, %r12
+    # If there are no argv, go to .L_no_argv for reading from
+    # stdin.
+    mov (%rsp), %rbx                # (%rsp) is argc
+    cmp $1, %rbx
     jle .L_no_argv
 
-    mov 16(%rsp), %r14
-    # Call open(argv[1], O_RDONLY).
-    mov 16(%rsp), %rdi
+    xor %r13, %r13
+    xor %r14, %r14
+    xor %r15, %r15
+    # In a loop, argv[n] for 1 <= n < argc; rbp holds n.
+    mov $1, %rbp
+
+.L_argv_loop:
+    # Throughout the loop, register assignments:
+    # r12: argv[n]. Also gets into rdi for passing into the open() syscall
+    # rbp: argv counter n
+    # r13, r14, r15: total amounts counted in all files.
+    mov 8(%rsp, %rbp, 8), %rdi      # argv[n] is in (rsp + 8 + 8*n)
+    mov %rdi, %r12
+
+    # Call open(argv[n], O_RDONLY).
     mov $O_RDONLY, %rsi
     mov $OPEN_NO_MODE, %rdx
     mov $2, %rax
@@ -43,10 +59,26 @@ _start:
     mov %rax, %rdi
     call count_in_file
     
+    # Add the counters returned from count_in_file to the totals and pass
+    # them to print_counters.
     mov %rax, %rdi
+    add %rax, %r13
     mov %rdx, %rsi
+    add %rdx, %r14
     mov %r9, %rdx
-    mov %r14, %rcx
+    add %r9, %r15
+    mov %r12, %rcx
+    call print_counters
+
+    inc %rbp
+    cmp %rbx, %rbp
+    jl .L_argv_loop
+
+    # Done with all argv. Now print out the totals.
+    mov %r13, %rdi
+    mov %r14, %rsi
+    mov %r15, %rdx
+    lea total_str, %rcx
     call print_counters
 
     jmp .L_wcx64_exit
