@@ -46,6 +46,7 @@ _start:
     # Throughout the loop, register assignments:
     # r12: argv[n]. Also gets into rdi for passing into the open() syscall
     # rbp: argv counter n
+    # rbx: holds argc
     # r13, r14, r15: total amounts counted in all files.
     mov 8(%rsp, %rbp, 8), %rdi      # argv[n] is in (rsp + 8 + 8*n)
     mov %rdi, %r12
@@ -56,9 +57,14 @@ _start:
     mov $2, %rax
     syscall
 
+    # Ignore files that can't be opened
+    cmp $0, %rax
+    jl .L_next_argv
+    push %rax                       # save fd on the stack
+
     mov %rax, %rdi
     call count_in_file
-    
+
     # Add the counters returned from count_in_file to the totals and pass
     # them to print_counters.
     mov %rax, %rdi
@@ -70,6 +76,12 @@ _start:
     mov %r12, %rcx
     call print_counters
 
+    # Call close(argv[n])
+    pop %rdi                        # restore fd from the stack
+    mov $3, %rax
+    syscall
+
+.L_next_argv:
     inc %rbp
     cmp %rbx, %rbp
     jl .L_argv_loop
@@ -100,6 +112,7 @@ _start:
     mov $0, %rdi
     mov $60, %rax
     syscall
+    ret
 
 # Function count_in_file
 #   Counts chars, words and lines for a single file.
@@ -144,11 +157,14 @@ count_in_file:
     mov $READBUFLEN, %rdx
     mov $0, %rax
     syscall
-
+    
     # From here on, rax holds the amount of bytes actually read from the
     # file (the return value of read())
-    add %rax, %r9               # Update the char counter
+    add %rax, %r9                       # Update the char counter
     xor %rcx, %rcx
+
+    cmp $0, %rax                        # No bytes read?
+    je .L_done_with_this_byte
 
 .L_next_byte_in_buf:
     movb (%r13, %rcx, 1), %dl           # Read the byte
@@ -180,13 +196,14 @@ count_in_file:
 .L_done_with_this_byte:
     inc %rcx
     cmp %rcx, %rax
-    jne .L_next_byte_in_buf
+    jg .L_next_byte_in_buf
 
     # Done going over this buffer. We need to read another buffer
     # if rax == READBUFLEN.
     cmp $READBUFLEN, %rax
     je .L_read_buf
 
+.L_done_with_file:
     # Done with this file. The char count is already in r9.
     # Put the word and line counts in their return locations.
     mov %r15, %rdx
