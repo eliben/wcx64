@@ -1,3 +1,16 @@
+#-------------------------------------------------------------------------------
+# 
+# wcx64: a simplistic wc clone in x64 assembly. Usage:
+#
+# $ wcx64 file1 /path/file2 file3
+# 
+# When not given any command-line arguments, reads from stdin.
+# Always prints the all three counters: line, word, byte.
+#
+# Eli Bendersky (eliben@gmail.com)
+# This code is in the public domain
+#-------------------------------------------------------------------------------
+
 #------------- CONSTANTS --------------#
     .set O_RDONLY, 0x0
     .set OPEN_NO_MODE, 0x0
@@ -131,15 +144,15 @@ count_in_file:
     # Register usage within the function:
     #
     # rdi: holds the fd
-    # dl: next byte read from the buffer
     # r9: char counter
     # r15: word counter
     # r14: line counter
     # r13: address of the read buffer
     # rcx: loop index for going over a read buffer
+    # dl: next byte read from the buffer
     # r12: state indicator, with the states defined below.
-    #      the word counter is incremented when we switch from IN_WHITESPACE
-    #      to IN_WORD.
+    #      the word counter is incremented when we switch from
+    #      IN_WHITESPACE to IN_WORD.
     .set IN_WORD, 1
     .set IN_WHITESPACE, 2
     # In addition, rsi, rdx, rax are used in the call to read().
@@ -164,7 +177,7 @@ count_in_file:
     xor %rcx, %rcx
 
     cmp $0, %rax                        # No bytes read?
-    je .L_done_with_this_byte
+    je .L_done_with_file
 
 .L_next_byte_in_buf:
     movb (%r13, %rcx, 1), %dl           # Read the byte
@@ -181,11 +194,12 @@ count_in_file:
     # else, it's not whitespace but a part of a word
     cmp $IN_WORD, %r12
     je .L_done_with_this_byte
+    # Transition from IN_WHITESPACE to IN_WORD: increment the word counter
     inc %r15
     mov $IN_WORD, %r12
     jmp .L_done_with_this_byte
 .L_seen_newline:
-    inc %r14
+    inc %r14                            # Increment the line counter
 .L_seen_whitespace_not_newline:
     cmp $IN_WORD, %r12
     je .L_end_current_word
