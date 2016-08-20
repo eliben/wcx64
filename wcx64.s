@@ -16,17 +16,20 @@
 .set OPEN_SYSCALL, 2
 .set CLOSE_SYSCALL, 3
 .set EXIT_SYSCALL, 60
+.set STDIN_FD, 0
+.set STDOUT_FD, 1
 
 .set O_RDONLY, 0x0
 .set OPEN_NO_MODE, 0x0
 .set READBUFLEN, 4096
+.set ITOABUFLEN, 12
 .set NEWLINE, '\n'
 .set CR, '\r'
 .set TAB, '\t'
 .set SPACE, ' '
 
 #---------------- DATA ----------------#
-.data
+    .data
 
 newline_str:
     .asciz "\n"
@@ -38,24 +41,22 @@ total_str:
     .asciz "total"
 
 buf_for_read:
-# leave space for terminating 0
-.space READBUFLEN + 1, 0x0
+    # leave space for terminating 0
+    .space READBUFLEN + 1, 0x0
 
-# The itoa buffer here is large enough to hold just 11 digits (plus one
-# byte for the terminating null). For the wc counters this is enough
-# because it lets us represent 10-digit numbers (up to 10 GB)
-# with spaces in between.
-# Note: this is an artificial limitation for simplicity in printing out the
-# counters; this size can be easily increased.
-.set ITOABUFLEN, 12
-
+    # The itoa buffer here is large enough to hold just 11 digits (plus one
+    # byte for the terminating null). For the wc counters this is enough
+    # because it lets us represent 10-digit numbers (up to 10 GB)
+    # with spaces in between.
+    # Note: this is an artificial limitation for simplicity in printing out the
+    # counters; this size can be easily increased.
 buf_for_itoa:
     .space ITOABUFLEN, 0x0
     .set   endbuf_for_itoa, buf_for_itoa + ITOABUFLEN - 1
 
 #---------------- "MAIN" CODE ----------------#
-.globl _start
-.text
+    .globl _start
+    .text
 
 _start:
     # If there are no argv, go to .L_no_argv for reading from
@@ -125,8 +126,8 @@ _start:
     jmp .L_wcx64_exit
 
 .L_no_argv:
-    # Read from stdin
-    mov  $0, %rdi
+    # Read from stdin, which is file descriptor 0.
+    mov  $STDIN_FD, %rdi
     call count_in_file
 
     # Print the counters without a name string
@@ -147,8 +148,10 @@ _start:
 
 # Function count_in_file
 # Counts chars, words and lines for a single file.
+#
 # Arguments:
 # rdi     file descriptor representing an open file.
+#
 # Returns:
 # rax     line count
 # rdx     word count
@@ -179,7 +182,7 @@ count_in_file:
     # After each call to read(), rax is used for its return value.
     xor %r9, %r9
     xor %r15, %r15
-    mov $0, %r14
+    xor %r14, %r14
     lea buf_for_read, %r13
     mov $IN_WHITESPACE, %r12
 
@@ -193,11 +196,11 @@ count_in_file:
     # From here on, rax holds the number of bytes actually read from the
     # file (the return value of read())
     add %rax, %r9                       # Update the char counter
-    xor %rcx, %rcx
 
     cmp $0, %rax                        # No bytes read?
     je  .L_done_with_file
 
+    xor %rcx, %rcx
 .L_next_byte_in_buf:
     movb (%r13, %rcx, 1), %dl           # Read the byte
 
@@ -210,29 +213,33 @@ count_in_file:
     je  .L_seen_whitespace_not_newline
     cmp $TAB, %dl
     je  .L_seen_whitespace_not_newline
+    # else, it's not whitespace but a part of a word.
 
-    # else, it's not whitespace but a part of a word
+    # If we're in a word already, nothing else to do.
     cmp $IN_WORD, %r12
     je  .L_done_with_this_byte
-
-    # Transition from IN_WHITESPACE to IN_WORD: increment the word counter
+    # else, transition from IN_WHITESPACE to IN_WORD: increment the word
+    # counter.
     inc %r15
     mov $IN_WORD, %r12
     jmp .L_done_with_this_byte
 
 .L_seen_newline:
-    inc %r14                            # Increment the line counter
+    # Increment the line counter and fall through.
+    inc %r14
 
 .L_seen_whitespace_not_newline:
     cmp $IN_WORD, %r12
     je  .L_end_current_word
-    # Otherwise, still in newline
+    # Otherwise, still in whitespace.
     jmp .L_done_with_this_byte
 
 .L_end_current_word:
     mov $IN_WHITESPACE, %r12
 
 .L_done_with_this_byte:
+    # Advance read pointer and check if we haven't finished with the read
+    # buffer yet.
     inc %rcx
     cmp %rcx, %rax
     jg  .L_next_byte_in_buf
@@ -257,8 +264,10 @@ count_in_file:
 
 # Function print_cstring
 # Print a null-terminated string to stdout.
+#
 # Arguments:
 # rdi     address of string
+#
 # Returns: void
 print_cstring:
     # Find the terminating null
@@ -278,16 +287,18 @@ print_cstring:
     # Populate address of string into rsi first, because the later
     # assignment of fd clobbers rdi.
     mov %rdi, %rsi
-    mov $1, %rdi
+    mov $STDOUT_FD, %rdi
     mov %r10, %rdx
     syscall
     ret
 
 # Function print_counters
 # Print three counters with an optional name to stdout.
+#
 # Arguments:
 # rdi, rsi, rdx:   the counters
 # rcx:             address of the name C-string. If 0, no name is printed.
+#
 # Returns: void
 print_counters:
     push %r14
@@ -295,6 +306,7 @@ print_counters:
     push %rdx
     push %rsi
     push %rdi
+    # rcx can be clobbered by callees, so save it in %r14.
     mov  %rcx, %r14
 
     # r15 is the counter pointer, running over 0, 1, 2
@@ -319,7 +331,8 @@ print_counters:
     cmp $3, %r15
     jl  .L_print_next_counter
 
-    # If rcx not 0, print out the given null-terminated string as well.
+    # If name address is not 0, print out the given null-terminated string
+    # as well.
     cmp  $0, %r14
     je   .L_print_counters_done
     lea  fourspace_str, %rdi
@@ -339,10 +352,12 @@ print_counters:
 
 # Function memset
 # Fill memory with some byte
+#
 # Arguments:
 # rdi:    pointer to memory
 # rsi:    fill byte (in the low 8 bits)
 # rdx:    how many bytes to fill
+#
 # Returns: void
 memset:
     xor %r10, %r10
@@ -359,12 +374,16 @@ memset:
 # Assumes that there is enough space allocated in the target
 # buffer for the representation of the integer. Since the number itself
 # is accepted in the register, its value is bounded.
+#
 # Arguments:
 # rdi:    the integer
-# rsi:    address of the *last* byte in the target buffer
+# rsi:    address of the *last* byte in the target buffer. bytes will be filled
+#         starting with this address and proceeding lower until the number
+#         runs out.
+#
 # Returns:
 # rax:    address of the first byte in the target string that
-# contains valid information.
+#         contains valid information.
 itoa:
     movb $0, (%rsi)        # Write the terminating null and advance.
 
