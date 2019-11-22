@@ -21,7 +21,7 @@
 
 .set O_RDONLY, 0x0
 .set OPEN_NO_MODE, 0x0
-.set READBUFLEN, 4096
+.set READBUFLEN, 16384
 .set ITOABUFLEN, 12
 .set NEWLINE, '\n'
 .set CR, '\r'
